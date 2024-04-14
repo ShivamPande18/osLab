@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 #define BUFFER_SIZE 5
-#define MAX_ITEMS 5
+#define MAX_ITEMS 20
 
 int buffer[BUFFER_SIZE];
 int in = 0;
@@ -11,19 +12,16 @@ int out = 0;
 int produced_count = 0;
 int consumed_count = 0;
 
-pthread_mutex_t mutex;
-pthread_cond_t full;
-pthread_cond_t empty;
+sem_t mutex;
+sem_t full;
+sem_t empty;
 
 void* producer(void* arg) {
    int item = 1;
 
    while (produced_count < MAX_ITEMS) {
-      pthread_mutex_lock(&mutex);
-
-      while (((in + 1) % BUFFER_SIZE) == out) {
-         pthread_cond_wait(&empty, &mutex);
-      }
+      sem_wait(&empty);
+      sem_wait(&mutex);
 
       buffer[in] = item;
       printf("Produced: %d", item);
@@ -32,8 +30,8 @@ void* producer(void* arg) {
 
       produced_count++;
 
-      pthread_cond_signal(&full);
-      pthread_mutex_unlock(&mutex);
+      sem_post(&mutex);
+      sem_post(&full);
    }
 
    pthread_exit(NULL);
@@ -41,11 +39,8 @@ void* producer(void* arg) {
 
 void* consumer(void* arg) {
    while (consumed_count < MAX_ITEMS) {
-      pthread_mutex_lock(&mutex);
-
-      while (in == out) {
-         pthread_cond_wait(&full, &mutex);
-      }
+      sem_wait(&full);
+      sem_wait(&mutex);
 
       int item = buffer[out];
       printf("Consumed: %d", item);
@@ -53,8 +48,8 @@ void* consumer(void* arg) {
 
       consumed_count++;
 
-      pthread_cond_signal(&empty);
-      pthread_mutex_unlock(&mutex);
+      sem_post(&mutex);
+      sem_post(&empty);
    }
 
    pthread_exit(NULL);
@@ -63,9 +58,9 @@ void* consumer(void* arg) {
 int main() {
    pthread_t producerThread, consumerThread;
 
-   pthread_mutex_init(&mutex, NULL);
-   pthread_cond_init(&full, NULL);
-   pthread_cond_init(&empty, NULL);
+   sem_init(&mutex, 0, 1);
+   sem_init(&full, 0, 0);
+   sem_init(&empty, 0, BUFFER_SIZE);
 
    pthread_create(&producerThread, NULL, producer, NULL);
    pthread_create(&consumerThread, NULL, consumer, NULL);
@@ -73,9 +68,9 @@ int main() {
    pthread_join(producerThread, NULL);
    pthread_join(consumerThread, NULL);
 
-   pthread_mutex_destroy(&mutex);
-   pthread_cond_destroy(&full);
-   pthread_cond_destroy(&empty);
+   sem_destroy(&mutex);
+   sem_destroy(&full);
+   sem_destroy(&empty);
 
    return 0;
 }
